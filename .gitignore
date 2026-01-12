@@ -4,6 +4,7 @@ dragon-quant
 
 # IDE
 .idea/
+config.yaml
 
 # Reports and temporary data
 AI_Dragon_*.json

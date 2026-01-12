@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dragon-quant/config"
 	"dragon-quant/data_processor"
 	"dragon-quant/deepseek_reviewer"
 	"dragon-quant/fetcher"
@@ -156,155 +157,159 @@ func main() {
 		output_formatter.PrintRiskReport(riskResults)
 
 		// --- Step 6: DeepSeek 老狐狸鉴股 (V10.4 Full Scan) ---
-		// apiKey := os.Getenv("DEEPSEEK_API_KEY")
-		apiKey := "sk-87d7e6dcd05d439187841eb73cd536db" // Hardcoded as per user request
-		if apiKey != "" {
-			fmt.Println("\n🧠 [Step 6] 呼叫 DeepSeek 老狐狸 (全量审视)...")
-
-			// 准备全量数据 - Group by Sector
-			sectorStocks := make(map[string][]*model.StockInfo)
-			for _, r := range riskResults {
-				// Use the first tag as Industry/Sector, default to "Unknown"
-				sector := "其他板块"
-				if len(r.Stock.Tags) > 0 {
-					sector = r.Stock.Tags[0]
-				}
-				sectorStocks[sector] = append(sectorStocks[sector], r.Stock)
-			}
-
-			if len(sectorStocks) > 0 {
-				reviewer := deepseek_reviewer.NewReviewer(apiKey)
-				// Call the new Sector-based Review
-				sectorResults := reviewer.ReviewBySector(sectorStocks)
-
-				// Generate Markdown Report
-				reportFileMD := fmt.Sprintf("DeepSeek_Fox_Report_%s.md", fileTime)
-				reportFileHTML := fmt.Sprintf("DeepSeek_Fox_Report_%s.html", fileTime)
-
-				var mdBuffer strings.Builder
-
-				mdBuffer.WriteString("# 🦊 DeepSeek 老狐狸板块博弈报告\n")
-				mdBuffer.WriteString(fmt.Sprintf("**生成时间**: %s\n\n", timestamp))
-				mdBuffer.WriteString("> **战略**: 分板块弱肉强食，每个板块只选唯一真龙。\n\n")
-
-				// Iterate Sectors (Sorted Order?)
-				var sectors []string
-				for s := range sectorResults {
-					sectors = append(sectors, s)
-				}
-				sort.Strings(sectors)
-
-				for _, secName := range sectors {
-					res := sectorResults[secName]
-					mdBuffer.WriteString(fmt.Sprintf("## 🛡️ 板块: %s\n", secName))
-
-					// 1. Individual Reviews
-					mdBuffer.WriteString("### 个股辣评\n")
-					// Sort stocks in this sector for consistent order? (optional)
-					// Let's iterate the original list order to match insertion
-					for _, stock := range sectorStocks[secName] {
-						if review, ok := res.StockReviews[stock.Code]; ok {
-							mdBuffer.WriteString(fmt.Sprintf("- **%s**: %s\n", stock.Name, review))
-						}
-					}
-
-					// 2. Final Pick
-					mdBuffer.WriteString("\n### 👑 板块王者\n")
-					if res.FinalPick != nil {
-						fp := res.FinalPick
-						mdBuffer.WriteString(fmt.Sprintf("#### 🎯 唯一指定标的：【%s / %s】\n\n", fp.StockName, fp.StockCode))
-						mdBuffer.WriteString(fmt.Sprintf("**A. 嗜血逻辑**\n> %s\n\n", fp.Reason))
-						mdBuffer.WriteString(fmt.Sprintf("**🔥 量化王牌**: `%s`\n\n", fp.KeyMetric))
-						mdBuffer.WriteString("**B. 操盘策略**\n")
-						mdBuffer.WriteString(fmt.Sprintf("- 🚀 **突击点位**: %s\n", fp.Strategy.EntryPrice))
-						mdBuffer.WriteString(fmt.Sprintf("- 🛑 **熔断止损**: %s\n", fp.Strategy.StopLoss))
-						mdBuffer.WriteString(fmt.Sprintf("- 💰 **获利了结**: %s\n\n", fp.Strategy.TargetPrice))
-						mdBuffer.WriteString(fmt.Sprintf("**C. 盘中预警**: ⚠️ %s\n\n", fp.RiskWarning))
-					} else {
-						mdBuffer.WriteString("*(本板块无符合“必杀”标准的标的)*\n\n")
-					}
-					mdBuffer.WriteString("---\n")
-				}
-
-				// Save MD
-				err := os.WriteFile(reportFileMD, []byte(mdBuffer.String()), 0644)
-				if err == nil {
-					fmt.Printf("\n✅ 老狐狸报告(MD)已生成: %s\n", reportFileMD)
-				} else {
-					fmt.Printf("❌ MD生成失败: %v\n", err)
-				}
-
-				// --- Step 7: Grand Final (Top 5) ---
-				fmt.Println("\n🏆 [Step 7] 启动总决赛 (Top 5 巅峰对决)...")
-
-				// 1. Collect Candidates (Sector Winners)
-				var grandCandidates []*model.StockInfo
-				for _, r := range sectorResults {
-					if r.FinalPick != nil {
-						// Find the StockInfo object
-						// We don't have a direct map key for it easily, but we can browse sectorStocks
-						// Optimization: store *StockInfo in SectorResult?
-						// For now, loop sectorStocks[r.SectorName]
-						for _, s := range sectorStocks[r.SectorName] {
-							if s.Code == r.FinalPick.StockCode {
-								grandCandidates = append(grandCandidates, s)
-								break
-							}
-						}
-					}
-				}
-
-				// 2. Run Review
-				if len(grandCandidates) > 0 {
-					gfRes := reviewer.ReviewGrandFinals(grandCandidates)
-					if gfRes != nil {
-						// Append to Report (Prepend or Append?)
-						// Let's Append a "Grand Final" chapter
-						var gfBuffer strings.Builder
-						gfBuffer.WriteString("\n\n# 🏆 总决赛：五虎上将 (Grand Final Top 5)\n")
-						gfBuffer.WriteString(fmt.Sprintf("> **市场情绪**: %s\n\n", gfRes.MarketSentiment))
-
-						for _, t := range gfRes.Top5 {
-							icon := "🎖️"
-							if t.Rank == 1 {
-								icon = "👑 榜首 (The King)"
-							}
-							if t.Rank == 2 || t.Rank == 3 {
-								icon = "🛡️ 中军 (General)"
-							}
-							if t.Rank == 4 || t.Rank == 5 {
-								icon = "⚔️ 前锋 (Vanguard)"
-							}
-
-							gfBuffer.WriteString(fmt.Sprintf("### %s: %s (%s)\n", icon, t.StockName, t.StockCode))
-							gfBuffer.WriteString(fmt.Sprintf("> %s\n\n", t.Reason))
-						}
-
-						// Re-write file with appended content
-						// actually, better to just modify mdBuffer before writing file?
-						// But we already wrote it. Let's append.
-
-						f, err := os.OpenFile(reportFileMD, os.O_APPEND|os.O_WRONLY, 0644)
-						if err == nil {
-							f.WriteString(gfBuffer.String())
-							f.Close()
-							fmt.Println("✅ 总决赛名单已追加至报告。")
-
-							// Re-generate HTML with full content
-							fullContent, _ := os.ReadFile(reportFileMD)
-							htmlContent := output_formatter.SimpleMDToHTML(string(fullContent))
-							os.WriteFile(reportFileHTML, []byte(htmlContent), 0644)
-							fmt.Printf("✅ 老狐狸报告(HTML)已更新: %s\n", reportFileHTML)
-
-						}
-					}
-				} else {
-					fmt.Println("🤷‍♂️ 没有产生任何板块龙头，取消总决赛。")
-				}
-			}
-
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			fmt.Printf("\n⚠️ [Step 6] 加载 config.yaml 失败: %v, 跳过 AI 点评。\n", err)
 		} else {
-			fmt.Println("\n⚠️ [Step 6] 未配置 DEEPSEEK_API_KEY，跳过 AI 点评。")
+			apiKey := cfg.DeepSeek.APIKey
+			if apiKey != "" {
+				fmt.Println("\n🧠 [Step 6] 呼叫 DeepSeek 老狐狸 (全量审视)...")
+
+				// 准备全量数据 - Group by Sector
+				sectorStocks := make(map[string][]*model.StockInfo)
+				for _, r := range riskResults {
+					// Use the first tag as Industry/Sector, default to "Unknown"
+					sector := "其他板块"
+					if len(r.Stock.Tags) > 0 {
+						sector = r.Stock.Tags[0]
+					}
+					sectorStocks[sector] = append(sectorStocks[sector], r.Stock)
+				}
+
+				if len(sectorStocks) > 0 {
+					reviewer := deepseek_reviewer.NewReviewer(apiKey)
+					// Call the new Sector-based Review
+					sectorResults := reviewer.ReviewBySector(sectorStocks)
+
+					// Generate Markdown Report
+					reportFileMD := fmt.Sprintf("DeepSeek_Fox_Report_%s.md", fileTime)
+					reportFileHTML := fmt.Sprintf("DeepSeek_Fox_Report_%s.html", fileTime)
+
+					var mdBuffer strings.Builder
+
+					mdBuffer.WriteString("# 🦊 DeepSeek 老狐狸板块博弈报告\n")
+					mdBuffer.WriteString(fmt.Sprintf("**生成时间**: %s\n\n", timestamp))
+					mdBuffer.WriteString("> **战略**: 分板块弱肉强食，每个板块只选唯一真龙。\n\n")
+
+					// Iterate Sectors (Sorted Order?)
+					var sectors []string
+					for s := range sectorResults {
+						sectors = append(sectors, s)
+					}
+					sort.Strings(sectors)
+
+					for _, secName := range sectors {
+						res := sectorResults[secName]
+						mdBuffer.WriteString(fmt.Sprintf("## 🛡️ 板块: %s\n", secName))
+
+						// 1. Individual Reviews
+						mdBuffer.WriteString("### 个股辣评\n")
+						// Sort stocks in this sector for consistent order? (optional)
+						// Let's iterate the original list order to match insertion
+						for _, stock := range sectorStocks[secName] {
+							if review, ok := res.StockReviews[stock.Code]; ok {
+								mdBuffer.WriteString(fmt.Sprintf("- **%s**: %s\n", stock.Name, review))
+							}
+						}
+
+						// 2. Final Pick
+						mdBuffer.WriteString("\n### 👑 板块王者\n")
+						if res.FinalPick != nil {
+							fp := res.FinalPick
+							mdBuffer.WriteString(fmt.Sprintf("#### 🎯 唯一指定标的：【%s / %s】\n\n", fp.StockName, fp.StockCode))
+							mdBuffer.WriteString(fmt.Sprintf("**A. 嗜血逻辑**\n> %s\n\n", fp.Reason))
+							mdBuffer.WriteString(fmt.Sprintf("**🔥 量化王牌**: `%s`\n\n", fp.KeyMetric))
+							mdBuffer.WriteString("**B. 操盘策略**\n")
+							mdBuffer.WriteString(fmt.Sprintf("- 🚀 **突击点位**: %s\n", fp.Strategy.EntryPrice))
+							mdBuffer.WriteString(fmt.Sprintf("- 🛑 **熔断止损**: %s\n", fp.Strategy.StopLoss))
+							mdBuffer.WriteString(fmt.Sprintf("- 💰 **获利了结**: %s\n\n", fp.Strategy.TargetPrice))
+							mdBuffer.WriteString(fmt.Sprintf("**C. 盘中预警**: ⚠️ %s\n\n", fp.RiskWarning))
+						} else {
+							mdBuffer.WriteString("*(本板块无符合“必杀”标准的标的)*\n\n")
+						}
+						mdBuffer.WriteString("---\n")
+					}
+
+					// Save MD
+					err := os.WriteFile(reportFileMD, []byte(mdBuffer.String()), 0644)
+					if err == nil {
+						fmt.Printf("\n✅ 老狐狸报告(MD)已生成: %s\n", reportFileMD)
+					} else {
+						fmt.Printf("❌ MD生成失败: %v\n", err)
+					}
+
+					// --- Step 7: Grand Final (Top 5) ---
+					fmt.Println("\n🏆 [Step 7] 启动总决赛 (Top 5 巅峰对决)...")
+
+					// 1. Collect Candidates (Sector Winners)
+					var grandCandidates []*model.StockInfo
+					for _, r := range sectorResults {
+						if r.FinalPick != nil {
+							// Find the StockInfo object
+							// We don't have a direct map key for it easily, but we can browse sectorStocks
+							// Optimization: store *StockInfo in SectorResult?
+							// For now, loop sectorStocks[r.SectorName]
+							for _, s := range sectorStocks[r.SectorName] {
+								if s.Code == r.FinalPick.StockCode {
+									grandCandidates = append(grandCandidates, s)
+									break
+								}
+							}
+						}
+					}
+
+					// 2. Run Review
+					if len(grandCandidates) > 0 {
+						gfRes := reviewer.ReviewGrandFinals(grandCandidates)
+						if gfRes != nil {
+							// Append to Report (Prepend or Append?)
+							// Let's Append a "Grand Final" chapter
+							var gfBuffer strings.Builder
+							gfBuffer.WriteString("\n\n# 🏆 总决赛：五虎上将 (Grand Final Top 5)\n")
+							gfBuffer.WriteString(fmt.Sprintf("> **市场情绪**: %s\n\n", gfRes.MarketSentiment))
+
+							for _, t := range gfRes.Top5 {
+								icon := "🎖️"
+								if t.Rank == 1 {
+									icon = "👑 榜首 (The King)"
+								}
+								if t.Rank == 2 || t.Rank == 3 {
+									icon = "🛡️ 中军 (General)"
+								}
+								if t.Rank == 4 || t.Rank == 5 {
+									icon = "⚔️ 前锋 (Vanguard)"
+								}
+
+								gfBuffer.WriteString(fmt.Sprintf("### %s: %s (%s)\n", icon, t.StockName, t.StockCode))
+								gfBuffer.WriteString(fmt.Sprintf("> %s\n\n", t.Reason))
+							}
+
+							// Re-write file with appended content
+							// actually, better to just modify mdBuffer before writing file?
+							// But we already wrote it. Let's append.
+
+							f, err := os.OpenFile(reportFileMD, os.O_APPEND|os.O_WRONLY, 0644)
+							if err == nil {
+								f.WriteString(gfBuffer.String())
+								f.Close()
+								fmt.Println("✅ 总决赛名单已追加至报告。")
+
+								// Re-generate HTML with full content
+								fullContent, _ := os.ReadFile(reportFileMD)
+								htmlContent := output_formatter.SimpleMDToHTML(string(fullContent))
+								os.WriteFile(reportFileHTML, []byte(htmlContent), 0644)
+								fmt.Printf("✅ 老狐狸报告(HTML)已更新: %s\n", reportFileHTML)
+
+							}
+						}
+					} else {
+						fmt.Println("🤷‍♂️ 没有产生任何板块龙头，取消总决赛。")
+					}
+				}
+
+			} else {
+				fmt.Println("\n⚠️ [Step 6] 未配置 DEEPSEEK_API_KEY，跳过 AI 点评。")
+			}
 		}
 
 	} else {
