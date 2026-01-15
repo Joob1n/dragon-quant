@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -81,86 +82,81 @@ JSON 格式如下：
 }
 
 3. 筛选标准
+如果大盘环境极其恶劣 (如30m线瀑布流)，请直接空仓或只选“抱团抗跌妖股”。
 如果没有完美标的，就选那个主力被套最深、必须自救的。必须选出一个。
 `
 
-const SystemPrompt = `# Role: A股量化“老狐狸” / 顶级游资博弈鉴别师
+const SystemPrompt = `Role: A股超短“镰刀手” / 顶级游资博弈套利者
+1. 核心定位
+你是一位在A股超短线江湖（T+1）厮杀多年的顶级游资操盘手。你非常重视【大盘环境 (Market Context)】，懂得“覆巢之下无完卵”的道理，如果是股灾，你会果断空仓。
+你不再是那个只求保命的退休老头，而是一匹嗜血的狼。你深知“风险与收益同源”，你的特长是利用 JSON 量化数据看穿主力的底牌。
 
+你的信条：
 
+不看基本面，只看情绪面与资金面。
 
-## 1. 核心定位
+只有T+1的利润才是利润，昨天的涨停板如果不连板就是废纸。
 
-你是一位在A股摸爬滚打二十年的量化交易老兵。你见过无数的“天地板”和“杀猪盘”，早已过了热血上头的年纪。现在的你，擅长利用高频量化数据（JSON）去**拆穿游资的画皮**，识别哪些是真正的“主升浪”，哪些是主力精心设计的“请君入瓮”。你的风格是：**阴谋论视角、风险厌恶、极度狡猾、只吃鱼身**。
+利用散户的恐惧贪婪，与主力共舞，做那个“割韭菜的人”背后的黄雀。
 
+2. 任务目标
+接收我提供的 JSON 格式量化指标与标的数据。你的任务是为我寻找次日必有溢价的标的，进行T+1的极致套利：
 
+弱转强博弈: 寻找那些看似要挂，实则主力在强力承接，即将由弱转强的“真龙”。
 
-## 2. 任务目标
+反核地天板: 识别恐慌盘涌出但主力暗中吸货的时刻，提示“刀口舔血”的最佳时机。
 
-接收我提供的 JSON 格式量化指标与标的数据。你的核心任务不是推荐我去送死（追高），而是利用数据进行“测谎”：
+情绪退潮点: 明确指出何时情绪见顶，必须在主力砸盘前一秒抢跑。
 
-1.  **避坑:** 识别主力拉高出货、诱多、假突破的陷阱。
+3. 分析逻辑 (镰刀手的直觉)
+A. 资金博弈 (Who is the Boss?)
+利用 JSON 数据拆解盘口语言：
 
-2.  **寻宝:** 找出那些主力控盘良好、洗盘结束、即将启动的真金白银。
+承接力度: 炸板时，下方的托单是散户的挂单还是主力的万手关门单？（区分真炸还是洗盘）
 
+封板质量: 涨停板上的封单结构，是排队骗散户去顶，还是主力真金白银封死不让进？
 
+竞价“抢筹”: 9:25分的集合竞价数据，是否出现超预期的巨量高开？（弱转强信号）
 
-## 3. 分析逻辑 (老狐狸的嗅觉)
+B. 情绪周期 (Surfing the Wave)
+识别“洗盘”: 缩量急跌，分时图如心电图般织布，利用数据判断主力是否在刻意压价吸筹。
 
+识别“加速”: 换手率是否达标？如果缩量加速缩得太厉害，要警惕次日一旦分歧就是“天地板”。
 
+C. T+1 卖出逻辑
+不及预期: 昨天硬板，今天开盘竞价弱于预期（如低开或量能不够），直接按核按钮跑路。
 
-### A. 量化测谎 (The Lie Detector)
+一致转分歧: 大家都看多的时候，就是该砸盘的时候。
 
-利用 JSON 中的数据寻找矛盾点：
+4. 输出要求 (冷酷且决绝)
+请按以下格式输出T+1博弈报告：
 
-* **量价背离:** 如果价格创新高但量能萎缩（JSON数据佐证），是不是主力在锁仓？还是买盘枯竭？
+【标的名称】 - 核心判断 (妖股首阴 / 弱转强 / 龙头反包 / 垃圾快跑)
 
-* **异常波动:** 盘中是否存在急拉慢跌（诱多出货）或急跌慢拉（洗盘吸筹）的特征？
+【主力底牌 (博弈逻辑)】:
 
-* **资金虚实:** 大单净流出但股价不跌？或者小单疯狂买入（散户进场）而股价滞涨？
+一针见血的解读。 例如：“主力在利用利空消息制造恐慌，早盘的急杀是标准的‘深水洗盘’，散户都在割肉，这时候必须反向贪婪，进场抢带血的筹码。”
 
+或者：“看着像突破，其实是‘钓鱼波’，大单都在流出，典型的拉高诱多，谁进谁是接盘侠，建议空仓观望。”
 
+【量化铁证】: 引用 JSON 中的关键数据（封板资金占比、主力净流入、分钟级换手率、竞价匹配量）来佐证你的判断。
 
-### B. 博弈识破 (Seeing Through the Tricks)
+【刀口舔血指南 (操作策略)】:
 
-用老股民的经验解读数据背后的阴谋：
+狙击点位: (精确到具体的低吸价格区间，如：-3%~-5%处分批低吸)
 
-* **识别“杀猪盘”:** 这种图形是不是经典的“老乡别走”？是不是为了配合利好出货？
+止损红线: (跌破哪里必须无脑砍仓，保住本金)
 
-* **识别“假机构”:** 龙虎榜数据或资金流向是否显示是假机构在对倒？
+明日预期: (是冲高走人，还是锁仓等连板？)
 
-* **识别“强转弱”:** 昨天硬板，今天开盘不及预期，是否需要立马跑路？
+5. 语调风格
+狂傲、犀利、极度自信、唯利是图。
 
+不要废话，不要模棱两可。
 
+多用超短线术语：“核按钮”、“弱转强”、“反包”、“大长腿”、“天地板”、“分歧一致”。
 
-## 4. 输出要求 (毒舌且精准)
-
-请按以下格式输出分析报告：
-
-
-
-1.  **【标的名称】 - 鉴定结论 (真龙 / 诱多陷阱 / 鸡肋 / 观察)**
-
-2.  **【老狐狸嗅觉 (核心逻辑)】:**
-
-    * 用怀疑的眼光解读数据。例如：“虽然涨停了，但JSON显示换手率过高，典型的烂板出货迹象，小心明天核按钮。”
-
-    * 或者：“底部放量滞涨，主力在偷偷吃货，别被表面的绿盘吓跑了。”
-
-3.  **【量化铁证】:** 必须引用 JSON 中的具体指标（Z-score, 量比, 资金流等）来支撑你的阴谋论。
-
-4.  **【操作锦囊】:**
-
-    * *潜伏点位:* (哪里低吸最安全？)
-
-    * *跑路信号:* (一旦出现什么数据，立刻清仓，不要犹豫)
-
-    * *陷阱警示:* (明确指出哪里可能有坑)
-
-
-
-## 5. 语调风格
-
-**冷峻、世故、一针见血**。多用“诱多”、“骗线”、“接盘侠”、“抬轿子”、“落袋为安”等词汇。不要激进，要像一个看着散户疯狂而自己冷静喝茶的老手。
+表现出一种“众人皆醉我独醒”的优越感，你的目标是带着用户在主力的刀锋上跳舞并全身而退。
 `
 
 func NewReviewer(apiKey string) *Reviewer {
@@ -171,7 +167,7 @@ func NewReviewer(apiKey string) *Reviewer {
 }
 
 // ReviewBySector 按板块并发审视，并进行最终择优
-func (r *Reviewer) ReviewBySector(sectorMap map[string][]*model.StockInfo) map[string]*SectorResult {
+func (r *Reviewer) ReviewBySector(sectorMap map[string][]*model.StockInfo, marketContext string) map[string]*SectorResult {
 	results := make(map[string]*SectorResult)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -193,10 +189,16 @@ func (r *Reviewer) ReviewBySector(sectorMap map[string][]*model.StockInfo) map[s
 			// Init History
 			var history []Message
 			history = append(history, Message{Role: "system", Content: SystemPrompt})
-			history = append(history, Message{Role: "user", Content: fmt.Sprintf("老伙计，我们现在看【%s】板块。准备好了吗？", name)})
+
+			// 🆕 Inject Market Context
+			introMsg := fmt.Sprintf("老伙计，我们现在看【%s】板块。准备好了吗？", name)
+			if marketContext != "" {
+				introMsg += fmt.Sprintf("\n\n【⚠️ 全局大盘背景 (上证指数 30m)】:\n%s\n请务必结合大盘环境，如果是下跌中继，请更加苛刻；如果是大盘共振，请更加贪婪。", marketContext)
+			}
+			history = append(history, Message{Role: "user", Content: introMsg})
 
 			// Warm up
-			resp := r.sendChat(history)
+			resp := r.SendChat(history)
 			history = append(history, Message{Role: "assistant", Content: resp})
 
 			// 1. Loop Stocks
@@ -205,7 +207,7 @@ func (r *Reviewer) ReviewBySector(sectorMap map[string][]*model.StockInfo) map[s
 				data, _ := json.Marshal(stock)
 				msg := fmt.Sprintf("股票: %s (%s)\n数据: %s\n点评一下: 真龙还是陷阱？", stock.Name, stock.Code, string(data))
 				history = append(history, Message{Role: "user", Content: msg})
-				review := r.sendChat(history)
+				review := r.SendChat(history)
 				history = append(history, Message{Role: "assistant", Content: review})
 				secRes.StockReviews[stock.Code] = review
 			}
@@ -214,7 +216,7 @@ func (r *Reviewer) ReviewBySector(sectorMap map[string][]*model.StockInfo) map[s
 			fmt.Printf("👑 [%s] 正在决出板块龙头 (JSON Mode)...\n", name)
 			history = append(history, Message{Role: "user", Content: SniperPrompt})
 
-			finalReviewRaw := r.sendChat(history)
+			finalReviewRaw := r.SendChat(history)
 
 			// Clean and Parsing
 			cleanedJSON := cleanJSONString(finalReviewRaw)
@@ -240,7 +242,7 @@ func (r *Reviewer) ReviewBySector(sectorMap map[string][]*model.StockInfo) map[s
 	return results
 }
 
-func (r *Reviewer) sendChat(history []Message) string {
+func (r *Reviewer) SendChat(history []Message) string {
 	reqBody := ChatRequest{
 		Model:    ModelName,
 		Messages: history,
@@ -288,48 +290,64 @@ type GrandFinalJSON struct {
 	MarketSentiment string     `json:"market_sentiment"`
 }
 
-const GrandFinalPrompt = `# Role: A股总舵主 / 证监会里的“老鬼” / 市场定海神针
+const GrandFinalPrompt = `# Role: A股趋势多头总舵主 / 机构趋势猎手 / 坚定的右侧交易者
 
 1. 任务背景
-Role: 你现在是一位顶级事件驱动型量化基金经理，擅长捕捉主力资金（Smart Money）动向，风格极其犀利，善于在“游资点火”与“机构锁仓”的共振点介入。
+Role: 你现在是一位专注于**“中级趋势”**的顶级基金经理。你极其厌恶风险，信奉“买在分歧，卖在一致”，**严禁追高打板**。你的目标是寻找那些主力资金已经介入、趋势刚刚确立或正在主升浪初期、且当前**仍有舒适买点**的标的。
 
-Task: 基于我提供的【板块龙头名单】，受限于资金，我只能保留 Top 5。请你运用量化多因子打分模型进行残酷筛选。
+Task: 基于我提供的【板块龙头名单】，请你运用量化多因子模型进行“去伪存真”的筛选，只能保留 Top 5。
 
-Selection Logic (核心筛选因子):
+**Critical Constraint (绝对红线):**
+* **剔除涨停股 (No Limit Up):** 任何当前已封死涨停、或接近涨停（涨幅>9.5%）的个股，统统剔除！我看不到买点的票，再好也是垃圾。
+* **拒绝缩量一字:** 没有换手的上涨是诱多，直接Pass。
 
-资金攻击性 (Smart Money Flow): 谁的近期主力净流入最凶猛？龙虎榜是否有顶级游资或机构在大举买入？拒绝成交量萎缩的“死鱼”。
+2. Selection Logic (核心筛选因子)
+请基于以下四个维度进行打分：
 
-板块共振度 (Sector Beta): 该个股所属板块是否是当前市场的“主线”？个股是否具备“卡位”优势（即板块一动，它先动）？
+* **趋势健康度 (Trend Momentum):**
+    * 重点寻找“均线多头排列”（MA5 > MA10 > MA20）且角度陡峭的标的。
+    * 寻找“空中加油”后的企稳，或“温和放量”沿5日线攀升的走势。
+    * *加分项:* 股价刚刚突破长期盘整区间（Box Breakout）。
 
-技术形态 (Technical Structure): 寻找“空中加油”、“也就是反包”或“均线多头排列”的形态。剔除上方套牢盘沉重的标的。
+* **机构控盘度 (Smart Money Build-up):**
+    * 摒弃纯游资的暴力拉升，寻找**机构席位**或**北向资金**持续净买入的痕迹。
+    * K线图上要有“红肥绿瘦”的特征，下跌缩量，上涨放量。
 
-情绪溢价 (Sentiment Premium): 该股是否有成为“妖股”或“市场总龙头”的辨识度？
+* **板块身位 (Sector Positioning):**
+    * 不需要它是最快封板的“情绪龙”，但必须是板块内的“中军”或“容量票”。
+    * 当板块分歧回调时，该股表现出极强的抗跌性（Alpha属性）。
 
-2. 评选标准 (五虎上将)
-* **榜首 (Rank 1):** 必须是绝对的市场总龙头，能带动大盘或情绪周期的。
-* **中军 (Rank 2-3):** 逻辑最硬、机构必定抱团的趋势大票。
-* **前锋 (Rank 4-5):** 弹性最好、可能走妖的连板票。
+* **买入安全垫 (Safety Margin):**
+    * 当前价格距离下方重要支撑位（如10日线或前期平台顶）较近，盈亏比极佳。
+    * RSI指标未严重超买，乖离率在合理范围。
 
-3. 输出要求
-请仅返回一个标准的 JSON 对象，不要包含 Markdown 格式（如 json code block），不要包含任何额外的解释文字。
-JSON 格式如下：
+3. 评选标准 (趋势五虎)
+请根据“确定性”和“盈亏比”排序：
+
+* **Rank 1 (趋势总龙):** 板块逻辑最硬、机构持仓最重、且当前处于“主升浪中段”的最佳上车标的。
+* **Rank 2-3 (稳健中军):** 进可攻退可守，量价配合完美，刚刚完成洗盘动作的潜力股。
+* **Rank 4-5 (弹性先锋):** 股性活跃但未涨停，处于突破临界点，一触即发。
+
+4. 输出要求
+请仅返回一个标准的 JSON 对象，严禁包含 Markdown 格式（如 json code block），严禁包含任何解释文字。
+
+JSON 格式严格如下：
 {
 "top_5": [
-{"rank": 1, "stock_name": "...", "stock_code": "...", "reason": "核心理由"},
+{"rank": 1, "stock_name": "...", "stock_code": "...", "reason": "核心理由（强调为何它是最佳趋势买点，而非追高）"},
 {"rank": 2, "stock_name": "...", "stock_code": "...", "reason": "..."},
 {"rank": 3, "stock_name": "...", "stock_code": "...", "reason": "..."},
 {"rank": 4, "stock_name": "...", "stock_code": "...", "reason": "..."},
 {"rank": 5, "stock_name": "...", "stock_code": "...", "reason": "..."}
 ],
-"market_sentiment": "用一句话总结当前全市场的情绪阶段（如：退潮期、主升浪、混沌期）"
-}
+"market_sentiment": "用简短一句话总结当前市场的'趋势赚钱效应'（如：赛道股修复、权重搭台题材唱戏、高位股补跌等）"
 }
 `
 
 // --- 3. 核心功能实现 ---
 
 // ReviewGrandFinals 总决赛：从各板块龙头中选出 Top 5
-func (r *Reviewer) ReviewGrandFinals(candidates []*model.StockInfo) *GrandFinalJSON {
+func (r *Reviewer) ReviewGrandFinals(candidates []*model.StockInfo, marketContext string) *GrandFinalJSON {
 	fmt.Printf("\n🏆 [DeepSeek] 启动总决赛 (Grand Final)，入围选手: %d 位\n", len(candidates))
 
 	if len(candidates) == 0 {
@@ -344,6 +362,15 @@ func (r *Reviewer) ReviewGrandFinals(candidates []*model.StockInfo) *GrandFinalJ
 
 	// 2. Add Candidates Data
 	var sb strings.Builder
+
+	// 🆕 Inject Market Context
+	if marketContext != "" {
+		sb.WriteString("【👑 大盘御批 (系统风险提示)】:\n")
+		sb.WriteString(marketContext)
+		sb.WriteString("\n\n")
+		sb.WriteString("请先判断大盘处于什么阶段 (主升/震荡/暴跌)。如果是暴跌期，请严格收紧筛选标准。\n\n")
+	}
+
 	sb.WriteString("【入围板块龙头名单】:\n")
 
 	for i, s := range candidates {
@@ -362,7 +389,7 @@ func (r *Reviewer) ReviewGrandFinals(candidates []*model.StockInfo) *GrandFinalJ
 	history = append(history, Message{Role: "user", Content: sb.String()})
 
 	// 3. Call API
-	resp := r.sendChat(history)
+	resp := r.SendChat(history)
 	if strings.HasPrefix(resp, "Error") || strings.HasPrefix(resp, "API Error") {
 		fmt.Printf("❌ [GrandFinal] API 请求失败: %v\n", resp)
 		return nil
@@ -479,7 +506,7 @@ func (r *Reviewer) ReviewBySector30m(sectorMap map[string][]*model.StockInfo) ma
 			history = append(history, Message{Role: "user", Content: fmt.Sprintf("你好，我是【%s】板块的交易员。我们开始吧。", name)})
 
 			// Warm up / Ack
-			resp := r.sendChat(history)
+			resp := r.SendChat(history)
 			history = append(history, Message{Role: "assistant", Content: resp})
 
 			// 2. Loop Stocks (Conversational)
@@ -517,7 +544,7 @@ func (r *Reviewer) ReviewBySector30m(sectorMap map[string][]*model.StockInfo) ma
 				history = append(history, Message{Role: "user", Content: msgContent})
 
 				fmt.Printf("   ... [%s] 分析 %s ...\n", name, s.Name)
-				review := r.sendChat(history)
+				review := r.SendChat(history)
 				history = append(history, Message{Role: "assistant", Content: review})
 
 				count++
@@ -533,7 +560,7 @@ func (r *Reviewer) ReviewBySector30m(sectorMap map[string][]*model.StockInfo) ma
 			fmt.Printf("🤔 [%s] 正在决出 Top 3 (已审视 %d 只)...\n", name, count)
 			history = append(history, Message{Role: "user", Content: Prompt30mSelect})
 
-			finalResp := r.sendChat(history)
+			finalResp := r.SendChat(history)
 			if strings.HasPrefix(finalResp, "Error") || strings.HasPrefix(finalResp, "API Error") {
 				fmt.Printf("❌ [30m] %s Final Select API Error: %s\n", name, truncate(finalResp, 50))
 				return
@@ -559,5 +586,108 @@ func (r *Reviewer) ReviewBySector30m(sectorMap map[string][]*model.StockInfo) ma
 	}
 
 	wg.Wait()
+	return results
+}
+
+// --- Sector Trend Review (AI Filter) ---
+
+type SectorTrendResult struct {
+	SectorCode string `json:"sector_code"`
+	Status     string `json:"status"` // "MainWave", "Wash", "Accumulation", "Dump"
+	Reason     string `json:"reason"`
+}
+
+type AISecomResponse struct {
+	Sectors []SectorTrendResult `json:"sectors"`
+}
+
+const SectorTrendPrompt = `# Role: 主力意图识别系统 (Main Force Tracker)
+
+1. 任务目标
+请分析这批板块的【最近15日K线走势】，判断主力资金的真实意图。
+你需要识别以下四种状态：
+(1) MainWave (主升浪): 量价齐升，趋势向上，多头排列。 -> 【保留】
+(2) Wash (洗盘/分歧): 上升趋势中的缩量回调，或者箱体震荡。 -> 【保留】
+(3) Ignition (启动/试盘): 底部突然放量大阳线。 -> 【保留】
+(4) Dump (出货/下跌): 高位放量长阴，或者均线空头排列，阴跌不止。 -> 【剔除】
+
+2. 输入数据格式
+"板块名 (代码): [Day1: C=xx, V=xx] ... [Day15: C=xx, V=xx]"
+(C=收盘价, V=成交额, R=涨跌幅%)
+
+3. 输出要求
+请仅返回一个标准的 JSON 对象：
+{
+  "sectors": [
+    {"sector_code": "BKxxxx", "status": "Wash", "reason": "缩量回调至10日线，主力控盘明显"}
+  ]
+}
+`
+
+func (r *Reviewer) ReviewSectorTrends(sectors []model.SectorInfo) map[string]SectorTrendResult {
+	results := make(map[string]SectorTrendResult)
+
+	// Batch processing: 10 sectors per batch to avoid token limits
+	batchSize := 10
+	for i := 0; i < len(sectors); i += batchSize {
+		end := i + batchSize
+		if end > len(sectors) {
+			end = len(sectors)
+		}
+
+		batch := sectors[i:end]
+		fmt.Printf("🧠 [AI Sector Filter] 分析第 %d-%d 个板块...\n", i+1, end)
+
+		var sb strings.Builder
+		sb.WriteString("请分析以下板块的主力意图:\n")
+
+		for _, sec := range batch {
+			if len(sec.History) < 5 {
+				continue
+			}
+
+			// Format NetInflow
+			flowStr := fmt.Sprintf("今日净流: %.1f万", sec.NetInflow/10000)
+			if math.Abs(sec.NetInflow) > 100000000 {
+				flowStr = fmt.Sprintf("今日净流: %.1f亿", sec.NetInflow/100000000)
+			}
+			flow5Str := fmt.Sprintf("5日净流: %.1f万", sec.NetInflow5Day/10000)
+			if math.Abs(sec.NetInflow5Day) > 100000000 {
+				flow5Str = fmt.Sprintf("5日净流: %.1f亿", sec.NetInflow5Day/100000000)
+			}
+
+			sb.WriteString(fmt.Sprintf("\n板块: %s (%s)\n资金: [%s, %s]\n历史走势: ", sec.Name, sec.Code, flowStr, flow5Str))
+			// Only send last 10 days to be concise
+			startIdx := 0
+			if len(sec.History) > 10 {
+				startIdx = len(sec.History) - 10
+			}
+			for k := startIdx; k < len(sec.History); k++ {
+				h := sec.History[k]
+				sb.WriteString(fmt.Sprintf("[D%d: C=%.2f, R=%.2f%%, V=%.0f] ", k-startIdx+1, h.Close, h.Change, h.Amount))
+			}
+		}
+
+		// Call AI
+		history := []Message{
+			{Role: "system", Content: SectorTrendPrompt},
+			{Role: "user", Content: sb.String()},
+		}
+
+		resp := r.SendChat(history)
+
+		// Parse
+		cleaned := cleanJSONString(resp)
+		var aiResp AISecomResponse
+		err := json.Unmarshal([]byte(cleaned), &aiResp)
+		if err == nil {
+			for _, item := range aiResp.Sectors {
+				results[item.SectorCode] = item
+			}
+		} else {
+			fmt.Printf("❌ Sector Batch Parse Error: %v\n", err)
+		}
+	}
+
 	return results
 }

@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,57 @@ func FetchSectorStocks(code string) []model.StockInfo {
 	return list
 }
 
+// 🆕 FetchSectorHistory fetches the daily K-line history for a sector index.
+func FetchSectorHistory(code string) []model.KLineData {
+	// EastMoney Block ID format: "BK0xxx" -> "90.BK0xxx"
+	// For industry like "BK0477", use "90.BK0477"
+	// For concept like "BK0984", use "90.BK0984"
+	// Note: Usually "90." works for blocks.
+	secID := "90." + code
+
+	// klt=101: Daily
+	// lmt=15: Get last 15 days (enough for trend analysis)
+	// Change f6 -> f57 (Amount)
+	url := fmt.Sprintf("http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&fields1=f1&fields2=f51,f53,f57&klt=101&fqt=1&end=20500000&lmt=15", secID)
+
+	// fmt.Printf("DEBUG: FetchSectorHistory URL: %s\n", url)
+
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		fmt.Printf("❌ FetchSectorHistory Net Error: %v\n", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, _ := ioutil.ReadAll(resp.Body)
+	// fmt.Printf("DEBUG: FetchSectorHistory Body: %s\n", string(body)[:min(len(body), 200)])
+
+	var kResp model.KLineResponse
+	json.Unmarshal(body, &kResp)
+
+	var klines []model.KLineData
+	lastClose := 0.0
+	for i, line := range kResp.Data.Klines {
+		// fmt.Printf("DEBUG Line: %s\n", line)
+		parts := strings.Split(line, ",")
+		if len(parts) >= 2 {
+			p, _ := strconv.ParseFloat(parts[1], 64)
+			amt := 0.0
+			if len(parts) >= 3 {
+				amt, _ = strconv.ParseFloat(parts[2], 64)
+			}
+			change := 0.0
+			if i > 0 {
+				change = (p - lastClose) / lastClose * 100 // Convert to PctChange for easier AI reading
+			}
+			lastClose = p
+			klines = append(klines, model.KLineData{Close: p, Change: change, Amount: amt})
+		}
+	}
+	return klines
+}
+
 func FetchHistoryData(code string, limit int) []model.KLineData {
 	secID := "0." + code
 	if strings.HasPrefix(code, "6") {
@@ -35,7 +87,7 @@ func FetchHistoryData(code string, limit int) []model.KLineData {
 	// fields2=f51,f53,f6 (Date, Close, Amount)
 	url := fmt.Sprintf("http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&fields1=f1&fields2=f51,f53,f6&klt=101&fqt=1&end=20500000&lmt=%d", secID, limit)
 
-	client := http.Client{Timeout: 3 * time.Second}
+	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil
@@ -61,7 +113,7 @@ func FetchHistoryData(code string, limit int) []model.KLineData {
 				change = p - lastClose
 			}
 			lastClose = p
-			klines = append(klines, model.KLineData{Close: p, Change: change, Amount: amt})
+			klines = append(klines, model.KLineData{Close: p, Change: change, Amount: amt, Date: parts[0]})
 		}
 	}
 	return klines
@@ -164,8 +216,76 @@ func Fetch30MinKline(code string, limit int) []model.KLineData {
 	return klines
 }
 
+// 🆕 获取1分钟K线数据 (指定天数)
+func Fetch1MinKline(code string, days int) []model.KLineData {
+	// 1. Get Trading Days (Daily K-line)
+	// We need 'days' trading days.
+	dailyKlines := FetchHistoryData(code, days)
+	if len(dailyKlines) == 0 {
+		return nil
+	}
+
+	secID := "0." + code
+	if strings.HasPrefix(code, "6") {
+		secID = "1." + code
+	}
+
+	var allMinKlines []model.KLineData
+	client := http.Client{Timeout: 10 * time.Second}
+
+	// 2. Loop over each day to get 1-min data
+	for _, day := range dailyKlines {
+		// day.Date format is usually "2006-01-02"
+		dateStr := strings.ReplaceAll(day.Date, "-", "") // "20060102"
+
+		// lmt=240 for one day
+		url := fmt.Sprintf("http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&fields1=f1&fields2=f51,f53,f57&klt=1&fqt=1&end=%s&lmt=240", secID, dateStr)
+
+		resp, err := client.Get(url)
+		if err != nil {
+			fmt.Printf("Error 1m: %v\n", err)
+			continue
+		}
+
+		body, _ := ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		var kResp model.KLineResponse
+		json.Unmarshal(body, &kResp)
+
+		lastClose := 0.0 // Actually we might not need to recalculate change carefully if we just want data
+		// But let's keep consistency
+
+		for i, line := range kResp.Data.Klines {
+			parts := strings.Split(line, ",")
+			if len(parts) >= 2 {
+				p, _ := strconv.ParseFloat(parts[1], 64)
+				amt := 0.0
+				if len(parts) >= 3 {
+					amt, _ = strconv.ParseFloat(parts[2], 64)
+				}
+				change := 0.0
+				// For change, we really need prev close of *fetching session*?
+				// Simplification: just diff with previous bar in this chunk
+				if i > 0 {
+					change = p - lastClose
+				}
+				lastClose = p
+
+				// Optional: Filter to ensure we only keep bars for THIS day?
+				// Usually lmt=240 + end=Date gives that day's data.
+				// Just append.
+				allMinKlines = append(allMinKlines, model.KLineData{Close: p, Change: change, Amount: amt, Date: parts[0]})
+			}
+		}
+	}
+	// Note: They might be in chronological order if dailyKlines is chronological.
+	return allMinKlines
+}
+
 func FetchTopSectors(fs string, limit int, typeName string) []model.SectorInfo {
-	url := fmt.Sprintf("http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=%d&po=1&np=1&fltt=2&invt=2&fid=f3&fs=%s&fields=f12,f14", limit, fs)
+	// Add f62 (NetInflow), f164 (5-Day NetInflow)
+	url := fmt.Sprintf("http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=%d&po=1&np=1&fltt=2&invt=2&fid=f3&fs=%s&fields=f12,f14,f62,f164", limit, fs)
 	items := FetchRaw(url)
 	var list []model.SectorInfo
 	for _, item := range items {
@@ -178,16 +298,29 @@ func FetchTopSectors(fs string, limit int, typeName string) []model.SectorInfo {
 }
 
 func FetchRaw(url string) []json.RawMessage {
-	client := http.Client{Timeout: 5 * time.Second}
+	// Debug: Print URL and Response
+	// fmt.Printf("Fetching: %s\n", url)
+	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
+		fmt.Printf("❌ FetchRaw Error: %v\n", err)
 		return nil
 	}
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
+
+	// fmt.Printf("Raw Body (Top 100): %s\n", string(body)[:min(len(body), 100)])
+
 	var wrap model.ListResponse
 	json.Unmarshal(body, &wrap)
 	return wrap.Data.Diff
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // 🆕 获取个股详情 (竞价 f277 + 盘口)
@@ -273,4 +406,52 @@ func FetchLHBData(s *model.StockInfo) {
 			return // Found latest
 		}
 	}
+}
+
+// 🆕 根据名称搜索股票代码
+func SearchStock(keyword string) (string, string) {
+	escaped := url.QueryEscape(keyword)
+	url := fmt.Sprintf("http://searchapi.eastmoney.com/api/suggest/get?input=%s&type=14&token=D43BF722C8E33BDC906FB84D85E326E8", escaped)
+
+	// Retry logic: 3 attempts
+	for i := 0; i < 3; i++ {
+		client := http.Client{Timeout: 10 * time.Second} // Increased timeout to 10s
+		resp, err := client.Get(url)
+		if err != nil {
+			if i == 2 {
+				fmt.Printf("SearchStock error (attempt %d): %v\n", i+1, err)
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		body, _ := ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		var searchResp struct {
+			QuotationCodeTable struct {
+				Data []struct {
+					Code string `json:"Code"`
+					Name string `json:"Name"`
+					Mkt  string `json:"MarketType"`
+				} `json:"Data"`
+			} `json:"QuotationCodeTable"`
+		}
+
+		if err := json.Unmarshal(body, &searchResp); err == nil {
+			if len(searchResp.QuotationCodeTable.Data) > 0 {
+				match := searchResp.QuotationCodeTable.Data[0]
+				return match.Code, match.Name
+			}
+		}
+		// If unmarshal fail or empty data, maybe retry?
+		// For now assume empty data means not found.
+		if len(searchResp.QuotationCodeTable.Data) == 0 && i < 2 {
+			// Maybe sporadic empty? Retry.
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	return "", ""
 }

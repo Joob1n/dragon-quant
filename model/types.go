@@ -53,9 +53,20 @@ type SectorInfo struct {
 	Code string `json:"f12"`
 	Name string `json:"f14"`
 	Type string
+
+	// 🆕 Money Flow
+	NetInflow     float64 `json:"f62"`  // 今日主力净流入
+	NetInflow5Day float64 `json:"f164"` // 5日主力净流入
+
+	// 🆕 AI Sector Analysis
+	History  []KLineData `json:"history"`
+	AIView   string      `json:"ai_view"` // "Wash", "MainWave", "Dump"
+	AIReason string      `json:"ai_reason"`
 }
 
 type KLineData struct {
+	Name   string // 🆕 股票/板块名称
+	Date   string // 🆕 日期/时间
 	Close  float64
 	Change float64
 	Amount float64 // 成交额
