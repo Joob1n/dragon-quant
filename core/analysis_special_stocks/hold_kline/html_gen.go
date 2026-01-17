@@ -1,17 +1,16 @@
 package hold_kline
 
 import (
+	"dragon-quant/config"
 	"fmt"
 	"os"
 	"time"
 )
 
-func GenerateHoldReport(results []StockResult) {
-	fileName := fmt.Sprintf("Hold_Kline_Report_%s.html", time.Now().Format("2006-01-02-15"))
-
-	f, err := os.Create(fileName)
+func GenerateHoldReport(cfg *config.Config, results []StockResult) {
+	f, err := os.Create(cfg.HoldKlineReportFile)
 	if err != nil {
-		fmt.Printf("Cannot create file %s: %v\n", fileName, err)
+		fmt.Printf("Cannot create file %s: %v\n", cfg.HoldKlineReportFile, err)
 		return
 	}
 	defer f.Close()
@@ -75,5 +74,5 @@ func GenerateHoldReport(results []StockResult) {
 </html>`
 
 	f.WriteString(html)
-	fmt.Printf("\n✅ 报告已生成: %s\n", fileName)
+	fmt.Printf("\n✅ 报告已生成: %s\n", cfg.HoldKlineReportFile)
 }

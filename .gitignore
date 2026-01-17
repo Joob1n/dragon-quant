@@ -4,9 +4,10 @@ dragon-quant
 
 # IDE
 .idea/
-config.yaml
+#config.yaml
 
 # Reports and temporary data
+output/
 AI_Dragon_*.json
 AI_Hexagon_*.json
 AI_Tech_*.json

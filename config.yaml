@@ -1,0 +1,10 @@
+deepseek:
+  api_key: ""
+
+hold_stocks:
+  # - "平安银行"
+  "招商银行"
+  # - "中国中兔"
+
+output:
+  path: "./output/"

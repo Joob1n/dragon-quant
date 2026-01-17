@@ -1,6 +1,7 @@
 package output_formatter
 
 import (
+	"dragon-quant/config"
 	"dragon-quant/model"
 	"encoding/json"
 	"fmt"
@@ -26,17 +27,14 @@ const (
 	ColorBold   = "\033[1m"
 )
 
-func GenFiles(allSectors []model.SectorInfo, stocks []*model.StockInfo, elapsed time.Duration, sentiment string) {
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	fileTime := time.Now().Format("2006-01-02-15")
-
+func GenFiles(cfg *config.Config, allSectors []model.SectorInfo, stocks []*model.StockInfo, elapsed time.Duration, sentiment string) {
 	aiReport := model.AIReport{}
-	aiReport.Meta.ScanTime = timestamp
+	aiReport.Meta.ScanTime = cfg.StartTsStr
 	aiReport.Meta.Version = "v10.1 Dragon Sniper (Sentiment+Sustainability)"
 	aiReport.Meta.Desc = "Fields: CallAuction(f277), LHB, ProfitDev, DragonHabit, OpenVolRatio, Sentiment"
 	aiReport.Stats.Sentiment = sentiment
 
-	htmlReport := model.ReportData{Time: timestamp, Sentiment: sentiment, TotalCount: len(stocks), Duration: elapsed.String()}
+	htmlReport := model.ReportData{Time: cfg.StartTsStr, Sentiment: sentiment, TotalCount: len(stocks), Duration: elapsed.String()}
 
 	maxInflow := 0.0
 	topSector := ""
@@ -198,11 +196,11 @@ func GenFiles(allSectors []model.SectorInfo, stocks []*model.StockInfo, elapsed 
 	sort.Slice(aiReport.Sectors, func(i, j int) bool { return aiReport.Sectors[i].NetInflow > aiReport.Sectors[j].NetInflow })
 
 	jsonBytes, _ := json.MarshalIndent(aiReport, "", "  ")
-	ioutil.WriteFile(fmt.Sprintf("AI_Dragon_%s.json", fileTime), jsonBytes, 0644)
-	GenerateHTML(fmt.Sprintf("DragonReport_%s.html", fileTime), htmlReport)
+	ioutil.WriteFile(cfg.JsonFile, jsonBytes, 0644)
+	GenerateHTML(cfg.DragonReportFile, htmlReport)
 
-	fmt.Printf("\n📄 [手机战报] DragonReport_%s.html\n", fileTime)
-	fmt.Printf("🤖 [AI 数据] AI_Dragon_%s.json\n", fileTime)
+	fmt.Printf("\n📄 [手机战报] DragonReport_%s.html\n", cfg.StartTsStr)
+	fmt.Printf("🤖 [AI 数据] AI_Dragon_%s.json\n", cfg.StartTsStr)
 }
 
 func GenerateHTML(filename string, data model.ReportData) {
@@ -345,6 +343,7 @@ func Contains(slice []string, item string) bool {
 }
 
 func WriteMD(filename, content string) {
+	fmt.Printf("%s", filename)
 	ioutil.WriteFile(filename, []byte(content), 0644)
 }
 
