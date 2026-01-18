@@ -1,8 +1,9 @@
 package hold_kline
 
 import (
+	"dragon-quant/ai_reviewer/deepseek_reviewer"
+	"dragon-quant/config"
 	"dragon-quant/data_processor"
-	"dragon-quant/deepseek_reviewer"
 	"dragon-quant/fetcher"
 	"dragon-quant/model"
 	"fmt"
@@ -35,15 +36,20 @@ func (p *HoldProcessor) Close() {
 }
 
 // Run performs a review for the specified number of days
-func (p *HoldProcessor) Run(names []string, days int) {
+func (p *HoldProcessor) Run(cfg *config.Config, days int) {
+
+	names := cfg.HoldStocks
 	fmt.Printf("\n�️ [Custom Review] Starting for %d stocks (Days=%d)...\n", len(names), days)
-	p.runGeneric(names, days)
+
+	p.runGeneric(cfg, days)
 }
 
-func (p *HoldProcessor) runGeneric(names []string, days int) {
+func (p *HoldProcessor) runGeneric(cfg *config.Config, days int) {
 	var results []StockResult
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+
+	names := cfg.HoldStocks
 
 	// Semaphore to limit concurrency (DeepSeek API limits)
 	maxConcurrent := 5
@@ -192,7 +198,7 @@ func (p *HoldProcessor) runGeneric(names []string, days int) {
 	wg.Wait()
 	// Generate HTML (Reuse existing generic generator)
 	fmt.Printf("📊 Generating Report for %d results...\n", len(results))
-	GenerateHoldReport(results)
+	GenerateHoldReport(cfg, results)
 }
 
 func min(a, b int) int {
